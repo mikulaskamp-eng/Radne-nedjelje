@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Radi nedjeljom?</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#f4f5f7;--ink:#15171a;--muted:#727780;--card:#fff;--line:#e7e8eb;--green:#087a45}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:auto;padding:14px;padding-bottom:40px}
+.hero{background:#111318;color:#fff;border-radius:26px;padding:22px 18px 18px;margin-bottom:12px}
+.brand{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#aeb3bc;margin-bottom:8px}
+h1{font-size:31px;line-height:1.05;margin:0 0 8px}.sub{color:#c8cbd1}.date{margin-top:15px;font-size:17px;font-weight:750;text-transform:capitalize}
+.actions{display:flex;gap:8px;margin-top:14px}.actions button,.select{border:0;border-radius:13px;padding:12px 13px;font-size:15px}
+.actions button{background:#fff;color:#111;flex:1}.actions button.secondary{background:#292c32;color:#fff}
+select,input{width:100%;padding:14px;border:1px solid var(--line);border-radius:14px;background:#fff;font-size:16px;margin-top:10px;outline:none}
+.tabs{display:flex;gap:8px;margin:12px 0}.tabs button{flex:1;border:0;border-radius:12px;padding:12px;background:#fff}.tabs .active{background:#111318;color:#fff}
+.mapbox{height:270px;border-radius:20px;overflow:hidden;margin:12px 0;background:#ddd}
+.card{background:var(--card);border-radius:18px;padding:16px;margin:9px 0;box-shadow:0 2px 12px #00000009}
+.top{display:flex;justify-content:space-between;gap:10px}.name{font-weight:800;font-size:18px}.open{color:var(--green);font-weight:750;white-space:nowrap}.addr{color:var(--muted);margin:7px 0 12px}.small{font-size:13px;color:var(--muted)}.maplink{display:inline-block;margin-top:12px;padding:9px 11px;border-radius:10px;background:#eef0f3;color:#17191c;text-decoration:none;font-size:14px}
+.status{text-align:center;margin:12px 0;color:var(--muted)}.empty{text-align:center;padding:30px;color:#777}.count{font-weight:750}
+</style>
+</head>
+<body>
+<main>
+<section class="hero">
+<div class="brand">RADi NEDJELJOM?</div>
+<h1>Trgovine koje rade</h1>
+<div class="sub">Sve za ovu nedjelju, automatski ažurirano.</div>
+<div id="date" class="date"></div>
+<select id="city" aria-label="Grad">
+<option value="sibenik">Šibenik</option><option value="zadar">Zadar</option><option value="split">Split</option>
+<option value="rijeka">Rijeka</option><option value="zagreb">Zagreb</option><option value="osijek">Osijek</option>
+</select>
+<div class="actions">
+<button id="near">📍 Pronađi u mojoj blizini</button>
+<button id="refresh" class="secondary">↻ Osvježi</button>
+</div>
+<input id="search" placeholder="🔎 Pretraži trgovinu ili adresu">
+</section>
+
+<div class="tabs"><button class="active" data-filter="all">Sve</button><button data-filter="open">Otvorene</button></div>
+<div id="status" class="status">Učitavam aktualne podatke…</div>
+<div id="map" class="mapbox"></div>
+<div id="list"></div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let data=[], filter="all", userPos=null, map=null, markers=[];
+const $=s=>document.querySelector(s);
+const centers={sibenik:[43.735,15.895],zadar:[44.119,15.232],split:[43.508,16.440],rijeka:[45.327,14.442],zagreb:[45.815,15.982],osijek:[45.555,18.695]};
+function sunday(){const d=new Date();const day=d.getDay();if(day!==0)d.setDate(d.getDate()+(7-day));return d}
+function dateText(d){return d.toLocaleDateString("hr-HR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
+$("#date").textContent=dateText(sunday());
+
+map=L.map("map",{zoomControl:true}).setView(centers.sibenik,13);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"&copy; OpenStreetMap contributors"}).addTo(map);
+
+function distance(a,b){const R=6371,rad=x=>x*Math.PI/180;const dLat=rad(b[0]-a[0]),dLon=rad(b[1]-a[1]);const q=Math.sin(dLat/2)**2+Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(q))}
+function render(){
+ const q=$("#search").value.toLowerCase();
+ let rows=data.filter(x=>(filter==="all"||x.status==="open")&&(x.name+" "+x.address).toLowerCase().includes(q));
+ if(userPos) rows.sort((a,b)=>(a.coords?distance(userPos,a.coords):999)-(b.coords?distance(userPos,b.coords):999));
+ $("#list").innerHTML=rows.length?rows.map(x=>{
+  const maps="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(x.name+" "+x.address);
+  const km=x.coords&&userPos?` • ${distance(userPos,x.coords).toFixed(1)} km od tebe`:"";
+  return `<article class="card"><div class="top"><div class="name">${x.name}</div><div class="open">● Otvoreno</div></div>
+  <div class="addr">📍 ${x.address}${km}</div><b>${x.hours||"Radno vrijeme nije navedeno"}</b>
+  <a class="maplink" href="${maps}" target="_blank" rel="noopener">📍 Navigacija</a></article>`
+ }).join(""):'<div class="empty">Nema pronađenih trgovina.</div>';
+ updateMap(rows);
+}
+function updateMap(rows){
+ markers.forEach(m=>m.remove());markers=[];
+ const city=centers[$("#city").value]; if(!userPos) map.setView(city,13);
+ rows.forEach(x=>{if(!x.coords)return;const m=L.marker(x.coords).addTo(map).bindPopup(`<b>${x.name}</b><br>${x.address}<br>${x.hours||""}`);markers.push(m)});
+ if(userPos)L.circleMarker(userPos,{radius:8}).addTo(map).bindPopup("Tvoja lokacija");
+}
+async function load(){
+ $("#status").textContent="🔄 Dohvaćam aktualni popis…";
+ try{
+  const r=await fetch("/api/stores?city="+encodeURIComponent($("#city").value),{cache:"no-store"});
+  if(!r.ok)throw new Error("API");
+  const j=await r.json();data=j.stores||[];
+  $("#status").innerHTML=`<span class="count">${data.length} otvorenih trgovina</span> • ${j.date||dateText(sunday())}`;
+  map.setView(centers[$("#city").value],13);render();
+ }catch(e){
+  $("#status").textContent="🔴 Podaci trenutno nisu dostupni.";
+  $("#list").innerHTML='<div class="empty">Provjeri internetsku vezu i pritisni „Osvježi“.</div>';
+ }}
+$("#near").onclick=()=>{
+ if(!navigator.geolocation){alert("Tvoj preglednik ne podržava lokaciju.");return}
+ $("#near").textContent="📍 Tražim lokaciju…";
+ navigator.geolocation.getCurrentPosition(async p=>{
+  userPos=[p.coords.latitude,p.coords.longitude];map.setView(userPos,13);
+  $("#near").textContent="📍 Moja blizina";
+  // Keep the city filter but sort the results by distance.
+  render();
+  $("#near").textContent="📍 Pronađeno";
+ },()=>{$("#near").textContent="📍 Pronađi u mojoj blizini";alert("Lokacija nije dopuštena.");});
+};
+$("#refresh").onclick=load;$("#city").onchange=()=>{userPos=null;load()};$("#search").oninput=render;
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tabs button").forEach(x=>x.classList.remove("active"));b.classList.add("active");filter=b.dataset.filter;render()});
+load();
+</script>
+</body>
+</html>
